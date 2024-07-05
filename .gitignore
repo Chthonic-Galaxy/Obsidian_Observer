@@ -1,0 +1,4 @@
+Tests/
+SETTINGS/
+.venv/
+__pycache__/
