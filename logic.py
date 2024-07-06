@@ -214,7 +214,7 @@ class Deduplication:
     def get_duplicates(self) -> dict | str:
         return self._duplicates
     
-    def print_duplicates(self):
+    def print_duplicates(self, preview: bool = False):
         if isinstance(self._duplicates, dict):
             number = 1
             for hash, files in self._duplicates.items():
@@ -223,6 +223,12 @@ class Deduplication:
                 for file in files:
                     print(f"\t{subnumber}. {file}")
                     subnumber += 1
+                if preview:
+                    with open(file, "rb") as summary_f:
+                        try:
+                            print(f"```preview(utf-8) of Group({number}) hash({hash})\n{summary_f.read(100).decode("utf-8")}\n```preview end\n")
+                        except:
+                            print(f"```preview(bytes) of Group({number}) hash({hash})\n{summary_f.read(100)}\n```preview end\n")
                 number += 1
         else:
             print(self._duplicates)
@@ -232,15 +238,16 @@ class Deduplication:
             try:
                 duplicate_groups = list(self._duplicates.values())
                 
-                for index, valid_index in enumerate(keep_indexes.copy()):
-                    if valid_index < 0:
-                        keep_indexes[index] = len(keep_indexes)+valid_index
-                    else:
-                        pass
+                if keep_indexes:
+                    for index, valid_index in enumerate(keep_indexes.copy()):
+                        if valid_index < 0:
+                            keep_indexes[index] = len(keep_indexes)+valid_index
+                        else:
+                            pass
 
                 if 0 <= group_index < len(duplicate_groups):
                     group = list(duplicate_groups[group_index])
-                    if keep_indexes is not None:
+                    if keep_indexes:
                         files_to_keep = [file for i, file in enumerate(group) if i in keep_indexes]
                         files_to_remove = [file for file in group if file not in files_to_keep]
                     else:

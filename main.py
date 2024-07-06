@@ -17,15 +17,13 @@ def main():
                         default=0, type=int, help="Минимальный размер файлов которые нужно искать. В байтах")
     parser.add_argument("-i", "--ignore",
                         default=None, nargs="+", help="Перечислите названия папок и/или файлов которые нужно игнорировать.")
-    parser.add_argument("-da", "--default_action",
-                        default=None, help="Действие по умолчанию. (Remove all, Save fitst/last)")
     parser.add_argument("-p", "--preview",
                         action="store_true", help="Показывать первые 100 символов файла")
     
     
     p_args = parser.parse_args()
     deduplication = Deduplication(p_args.root_path, p_args.min_size, p_args.ignore)
-    deduplication.print_duplicates()
+    deduplication.print_duplicates(p_args.preview)
     if isinstance(duplications:=deduplication.get_duplicates(), dict):
         match input("Выбрать действие для дубликатов? (y/n) или (use default): ").lower():
             case "y" | "yes":
