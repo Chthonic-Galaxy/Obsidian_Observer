@@ -1,46 +1,78 @@
 import os
+import datetime
+from typing import Optional, List, Tuple, Iterator, Set
 import fnmatch
 
 class FileHunter:
-    def __init__(
-        self,
-        path: str = os.getcwd(),
-        pattern: str = "*",
-        ignore: list[str] = None,
-        min_size: int | None = None,
-        date = None
-    ):
+    def __init__(self, path: str, patterns: List[str] = None, ignore: Optional[List[str]] = None,
+                 min_size: Optional[int] = None, date: Optional[List[str]] = None):
         self.path = self._check_path(path)
-        self.pattern = pattern
-        self.ignore = ignore
-        self.min_size = min_size
-        self.date = date
-        
-        
+        self.patterns = patterns or ["*"]
+        self.ignore = set(ignore or [])
+        self.min_size = min_size or 0
+        self.date_filter = self._create_date_filter(date)
 
     @staticmethod
-    def _check_path(path):
+    def _check_path(path: str) -> str:
         if not os.path.exists(path):
-            raise FileNotFoundError("Dir doesn't exists")
+            raise FileNotFoundError(f"Directory doesn't exist: {path}")
         return path
-        
-    def file_search(self) -> set | str:
+
+    @staticmethod
+    def _create_date_filter(date_input: Optional[List[str]]) -> Optional[callable]:
+        if not date_input:
+            return None
+
+        date = datetime.datetime.strptime(date_input[0], "%Y-%m-%d")
+        option = date_input[1] if len(date_input) > 1 else "on"
+
+        if option == "before":
+            return lambda file_date: file_date < date
+        elif option == "after":
+            return lambda file_date: file_date > date
+        else:  # "on" or any other input
+            return lambda file_date: file_date.date() == date.date()
+
+    def _fast_scandir(self, path: str) -> Iterator[Tuple[str, List[os.DirEntry], List[os.DirEntry]]]:
+        try:
+            with os.scandir(path) as it:
+                dirs = []
+                files = []
+                for entry in it:
+                    if not entry.is_symlink():
+                        if entry.is_dir(follow_symlinks=False):
+                            if entry.name not in self.ignore:
+                                dirs.append(entry)
+                        else:
+                            files.append(entry)
+                yield path, dirs, files
+        except PermissionError:
+            print(f"Permission denied: {path}")
+
+    def _matches_criteria(self, entry: os.DirEntry) -> bool:
+        try:
+            return (
+                any(fnmatch.fnmatch(entry.name, pat) for pat in self.patterns) and
+                entry.stat().st_size >= self.min_size and
+                (not self.date_filter or self.date_filter(datetime.datetime.fromtimestamp(entry.stat().st_mtime)))
+            )
+        except OSError:
+            print(f"Error accessing file: {entry.path}")
+            return False
+
+    def file_search(self, addition_info: bool = False) -> Set[Tuple[str, float, int]] | Set[str]:
         matched_files = set()
         stack = [self.path]
-        
+
         while stack:
-            with os.scandir(stack[-1]) as scan:
-                stack.pop()
-                for item in scan:
-                    item_name = f"{item.name}/" if item.is_dir() else item.name
-                    restrictions = (
-                        (item.stat().st_size >= self.min_size) if self.min_size else True,
-                        ((item_name not in self.ignore) if self.ignore else True),
-                    )
-                    
-                    if all(restrictions):
-                        if item.is_file(follow_symlinks=False) and fnmatch.fnmatch(item.name, self.pattern):
-                            matched_files.add(os.path.realpath(item))
-                        elif item.is_dir(follow_symlinks=False):
-                            stack.append(os.path.realpath(item))
-        return matched_files if matched_files else "Nothing was founded"
+            for current_path, dirs, files in self._fast_scandir(stack.pop()):
+                stack.extend(entry.path for entry in dirs)
+                for entry in files:
+                    if self._matches_criteria(entry):
+                        if addition_info:
+                            stat = entry.stat()
+                            matched_files.add((entry.path, stat.st_mtime, stat.st_size))
+                        else:
+                            matched_files.add(entry.path)
+
+        return matched_files
